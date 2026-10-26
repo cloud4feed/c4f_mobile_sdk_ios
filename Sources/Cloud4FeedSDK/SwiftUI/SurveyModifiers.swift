@@ -41,21 +41,36 @@ public struct SurveyScrollView<Content: View>: View {
     }
 
     public var body: some View {
-        ScrollView(.vertical, showsIndicators: showsIndicators) {
-            VStack(spacing: 0) {
-                GeometryReader { proxy in
-                    Color.clear.preference(key: SurveyScrollOffsetKey.self,
-                                           value: -proxy.frame(in: .named(spaceName)).minY)
+        if #available(iOS 18.0, *) {
+            // Official scroll API: reports every scroll position change.
+            ScrollView(.vertical, showsIndicators: showsIndicators) { content }
+                .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                    geometry.contentOffset.y + geometry.contentInsets.top
+                } action: { _, points in
+                    report(points)
                 }
-                .frame(height: 0)
-                content
+        } else {
+            // iOS 15-17: read the content position through a preference.
+            ScrollView(.vertical, showsIndicators: showsIndicators) {
+                VStack(spacing: 0) {
+                    GeometryReader { proxy in
+                        Color.clear.preference(key: SurveyScrollOffsetKey.self,
+                                               value: -proxy.frame(in: .named(spaceName)).minY)
+                    }
+                    .frame(height: 0)
+                    content
+                }
+            }
+            .coordinateSpace(name: spaceName)
+            .onPreferenceChange(SurveyScrollOffsetKey.self) { points in
+                report(points)
             }
         }
-        .coordinateSpace(name: spaceName)
-        .onPreferenceChange(SurveyScrollOffsetKey.self) { points in
-            guard points > 0 else { return }
-            MobileSDK.shared?.triggerScroll(offsetPixels: Int((points * displayScale).rounded()))
-        }
+    }
+
+    private func report(_ points: CGFloat) {
+        guard points > 0 else { return }
+        MobileSDK.shared?.triggerScroll(offsetPixels: Int((points * displayScale).rounded()))
     }
 }
 

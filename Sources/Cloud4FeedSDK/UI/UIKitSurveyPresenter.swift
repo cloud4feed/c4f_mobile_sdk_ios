@@ -6,7 +6,11 @@ final class UIKitSurveyPresenter: SurveyPresenting {
 
     func present(_ request: SurveyPresentationRequest, onClose: @escaping () -> Void) -> Bool {
         guard let host = Self.topViewController() else {
-            SDKLog.error("No visible view controller to present survey \(request.surveyId)")
+            let windows = UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .flatMap { $0.windows }
+                .map { "\(type(of: $0)) key=\($0.isKeyWindow) root=\($0.rootViewController.map { String(describing: type(of: $0)) } ?? "nil")" }
+            SDKLog.error("No visible view controller to present survey \(request.surveyId). Windows: \(windows)")
             return false
         }
 
@@ -35,9 +39,19 @@ final class UIKitSurveyPresenter: SurveyPresenting {
     /// The view controller the user currently sees, in the foreground scene's key window.
     static func topViewController() -> UIViewController? {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
-        let window = scene?.windows.first { $0.isKeyWindow } ?? scene?.windows.first
-        return top(from: window?.rootViewController)
+        let ordered = scenes.filter { $0.activationState == .foregroundActive }
+            + scenes.filter { $0.activationState != .foregroundActive }
+        for scene in ordered {
+            // SwiftUI and the system can add helper windows (some become key while scrolling)
+            // without a root view controller; only app windows that are on screen count.
+            let candidates = scene.windows.filter {
+                $0.rootViewController != nil && !$0.isHidden && $0.windowLevel == .normal
+            }
+            if let window = candidates.first(where: { $0.isKeyWindow }) ?? candidates.first {
+                return top(from: window.rootViewController)
+            }
+        }
+        return nil
     }
 
     static func top(from root: UIViewController?) -> UIViewController? {

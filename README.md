@@ -3,14 +3,26 @@
 Swift version of the Cloud4Feed survey SDK. It reads the same configuration as the Android SDK
 (`c4f_mobile_sdk`) from `anonym.cloud4feed.com` and opens the survey from `cx.cloud4feed.com`.
 
-> Status: **Phase 2 written, not yet verified on a Mac.** The platform-independent core and the
-> trigger logic are unit-tested on Linux (93 tests). The UIKit / WebKit / SwiftUI layer and the
-> example app still have to be built and tested on a Mac (`Scripts/mac-verify.sh`). Not released.
+> Version **1.0.0**. Tested on the iOS 27 simulator (Xcode 27.1) against the live Cloud4Feed
+> backend: all six trigger types, the three display styles, custom parameters, exclusion rules,
+> display limits and the loading-error screen. React Native and Flutter bridges ship this SDK
+> bundled (`cloud4feed-mobilesdk-react-native` / `cloud4feed_mobilesdk_flutter` 1.3.0+).
 
 ## Requirements
 
 - iOS 15+
 - Swift 5.9+ (Xcode 15+)
+
+## Installation (Swift Package Manager)
+
+Xcode → **File → Add Package Dependencies…** → `https://github.com/cloud4feed/c4f_mobile_sdk_ios`
+→ Dependency Rule **Up to Next Major Version** from `1.0.0` → add the **Cloud4FeedSDK** library.
+
+Or in `Package.swift`:
+
+```swift
+.package(url: "https://github.com/cloud4feed/c4f_mobile_sdk_ios.git", from: "1.0.0")
+```
 
 ## Quick start
 
@@ -72,6 +84,8 @@ Sources/Cloud4FeedSDK/
 Tests/Cloud4FeedSDKTests/
 Example/SurveySDKTestApp-iOS/                    test app (XcodeGen project.yml)
 Scripts/mac-verify.sh                            Mac build + simulator run
+Scripts/mac-enable-screen-sharing.sh             one-time: desktop password + Screen Sharing on the Mac
+Scripts/connect-mac.ps1                          Windows: SSH tunnel + RealVNC Viewer to the Mac desktop
 ```
 
 ## Tests

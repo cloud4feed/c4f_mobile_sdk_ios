@@ -152,7 +152,29 @@ final class SurveyEngine {
             .filter { $0.enableExitTrigger && $0.triggerScreens.isEmpty && eligibility.canShow($0) }
     }
 
+    // MARK: - Identifiers from touches (React Native / hybrid)
+
+    /// Configured button id matching `identifier` case-insensitively (React Native reports
+    /// accessibility labels in lower case, as on Android).
+    func buttonId(matching identifier: String) -> String? {
+        let lowered = identifier.lowercased()
+        return watchedButtonIds.first { $0.lowercased() == lowered }
+    }
+
+    /// Whether `name` is one of the configured tab names (same rule as `tabSurvey`).
+    func isConfiguredTab(_ name: String) -> Bool {
+        let normalized = name.lowercased().trimmingCharacters(in: .whitespaces)
+        return config.surveys.contains { survey in
+            survey.enableTabChangeTrigger && survey.triggerTabs.contains { tab in
+                let configTab = tab.lowercased().trimmingCharacters(in: .whitespaces)
+                return normalized == configTab || normalized == "tab_\(configTab)"
+            }
+        }
+    }
+
     // MARK: - Manual display
+
+    var surveyIds: [String] { config.surveys.map(\.surveyId) }
 
     func survey(withId id: String) -> SurveyConfig? {
         config.surveys.first { $0.surveyId == id }

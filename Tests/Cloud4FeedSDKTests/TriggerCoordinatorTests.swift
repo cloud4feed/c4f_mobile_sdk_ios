@@ -178,6 +178,55 @@ final class TriggerCoordinatorTests: XCTestCase {
         XCTAssertEqual(presenter.presented.count, 2, "new visit, new chance")
     }
 
+    func testScrollRetriesWhenPresentationFailed() {
+        let (_, coordinator, presenter, scheduler) = env.makeCoordinator([
+            survey("s") { $0.enableScrollTrigger = true; $0.scrollThreshold = 250 },
+        ])
+        coordinator.trackScreen("swiftui")
+        presenter.canPresent = false
+        coordinator.scrollChanged(offsetPixels: 400)
+        XCTAssertTrue(presenter.presented.isEmpty)
+
+        presenter.canPresent = true
+        scheduler.advance(seconds: 0.3)
+        coordinator.scrollChanged(offsetPixels: 450)
+        XCTAssertEqual(presenter.presentedIds, ["s"], "a failed presentation does not use up the screen visit")
+    }
+
+    func testTouchIdentifiersMatchTabsAndButtonsOnly() {
+        let (core, coordinator, presenter, scheduler) = env.makeCoordinator([
+            survey("tab") { $0.enableTabChangeTrigger = true; $0.triggerTabs = ["Womens"] },
+            survey("btn") { $0.enableButtonTrigger = true; $0.buttonTriggerId = "Checkout_Button" },
+        ])
+        coordinator.trackScreen("products")
+        coordinator.touchIdentifiers(["Summer Sale - 50% Off", "product_card"])
+        XCTAssertTrue(presenter.presented.isEmpty)
+        XCTAssertEqual(core.session.currentScreen, "products", "unrelated labels do not change the context")
+
+        coordinator.touchIdentifiers(["tab_womens", "WOMENS"])
+        XCTAssertEqual(presenter.presentedIds, ["tab"])
+        presenter.closeCurrent()
+
+        scheduler.advance(seconds: 3)
+        coordinator.touchIdentifiers(["checkout_button"])
+        XCTAssertEqual(presenter.presentedIds, ["tab", "btn"], "button ids match case-insensitively")
+    }
+
+    func testQueueStatusAndResetTriggers() {
+        let (_, coordinator, presenter, _) = env.makeCoordinator([
+            survey("a") { $0.maxShowsPerSession = 1 }, survey("b") { $0.priority = 4 },
+        ])
+        XCTAssertEqual(coordinator.queueStatus, "Queue: Empty")
+        coordinator.showSurvey(id: "a")
+        coordinator.showSurvey(id: "b")
+        XCTAssertEqual(coordinator.queueStatus, "Queue: 1 surveys - (P:4)")
+        presenter.closeCurrent()
+        coordinator.clearQueue()
+        XCTAssertFalse(coordinator.showSurvey(id: "a"), "limit reached")
+        coordinator.resetTriggers()
+        XCTAssertTrue(coordinator.showSurvey(id: "a"))
+    }
+
     // MARK: App launch / exit
 
     func testAppLaunchWaitsForConfigAndDelay() {

@@ -132,8 +132,10 @@ public final class MobileSDK {
         return self
     }
 
-    /// For React Native / Flutter: no UIKit scanning; screens, buttons, tabs and scroll come from
-    /// `trackScreen`, `triggerButton`, `trackTab`, `triggerScroll`. Call before `autoSetup`.
+    /// For React Native / Flutter: no screen swizzle and no UIKit control scanning; screens come
+    /// from `trackScreen`. Scroll views in the window are still observed, and taps are matched by
+    /// accessibility label / identifier (React Native `accessibilityLabel` / `testID`), like the
+    /// Android bridge. Call before `autoSetup`.
     @discardableResult
     public func enableHybridMode() -> MobileSDK {
         isHybridMode = true
@@ -271,6 +273,48 @@ public final class MobileSDK {
         let hasSurveys = config.map { !$0.surveys.isEmpty } ?? false
         onConfigurationLoaded?(hasSurveys)
         completion?(hasSurveys)
+    }
+
+    // MARK: - Bridge support (React Native / Flutter)
+
+    /// Accessibility labels / identifiers under a tap. Used by hybrid frameworks whose buttons
+    /// are not UIKit controls; matches configured button ids and tab names.
+    public func handleTouchIdentifiers(_ identifiers: [String]) {
+        dispatchToMain { [self] in coordinator.touchIdentifiers(identifiers) }
+    }
+
+    public var surveyIds: [String] { core.engine.surveyIds }
+
+    /// Whether the exclusion rules of this survey exclude the current user.
+    public func isUserExcluded(surveyId: String) -> Bool {
+        guard let survey = core.engine.survey(withId: surveyId) else { return false }
+        return core.eligibility.isExcluded(survey)
+    }
+
+    public var isShowingSurvey: Bool { coordinator.isShowingSurvey }
+
+    public var queueStatus: String { coordinator.queueStatus }
+
+    public func clearSurveyQueue() {
+        dispatchToMain { [self] in coordinator.clearQueue() }
+    }
+
+    /// Restarts the per-session display counters and screen state (Android `resetTriggers`).
+    public func resetTriggers() {
+        dispatchToMain { [self] in coordinator.resetTriggers() }
+    }
+
+    /// Multi-line status text (Android `debugSurveyStatus`).
+    public func debugStatusText() -> String {
+        var lines = ["=== MULTI-SURVEY STATUS ==="]
+        lines += debugStatus().sorted { $0.key < $1.key }.map { "• \($0.key): \($0.value)" }
+        for survey in core.engine.config.surveys {
+            let decision = core.eligibility.decision(for: survey)
+            let state: String
+            if case .blocked(let reason) = decision { state = "blocked (\(reason.rawValue))" } else { state = "can show" }
+            lines.append("• Survey \(survey.surveyId): \(state), priority \(survey.priority)")
+        }
+        return lines.joined(separator: "\n")
     }
 
     // MARK: - Debug

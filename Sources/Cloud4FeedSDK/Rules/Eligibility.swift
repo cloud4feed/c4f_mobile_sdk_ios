@@ -59,6 +59,11 @@ final class Eligibility {
         return .allowed
     }
 
+    /// Exclusion rules only (Android `isUserExcluded(surveyId)`).
+    func isExcluded(_ survey: SurveyConfig) -> Bool {
+        exclusion.shouldExclude(survey.exclusionRules)
+    }
+
     func canShow(_ survey: SurveyConfig) -> Bool {
         let result = decision(for: survey)
         if case .blocked(let reason) = result {

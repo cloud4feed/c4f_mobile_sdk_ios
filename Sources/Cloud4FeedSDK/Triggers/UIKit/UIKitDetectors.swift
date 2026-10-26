@@ -62,23 +62,30 @@ final class ControlDetector: NSObject {
 /// Watches the scroll views of the current screen (KVO on `contentOffset`; the app's
 /// `delegate` is not touched) and reports the offset in pixels (design decision K5).
 final class ScrollObserver {
+    private struct Entry {
+        weak var scrollView: UIScrollView?
+        let observation: NSKeyValueObservation
+    }
+
     var onOffset: ((Int) -> Void)?
-    private var observations: [ObjectIdentifier: NSKeyValueObservation] = [:]
+    private var entries: [Entry] = []
 
     func observe(in root: UIView) {
+        // Views can be deallocated and their memory reused, so compare live objects, not addresses.
+        entries.removeAll { $0.scrollView == nil }
         UIViewWalker.visit(root) { view in
-            guard let scrollView = view as? UIScrollView, !(scrollView is UITextView), scrollView.isScrollEnabled else { return }
-            let key = ObjectIdentifier(scrollView)
-            guard observations[key] == nil else { return }
-            observations[key] = scrollView.observe(\.contentOffset, options: [.new]) { [weak self] scrollView, _ in
+            guard let scrollView = view as? UIScrollView, !(scrollView is UITextView), scrollView.isScrollEnabled,
+                  !entries.contains(where: { $0.scrollView === scrollView }) else { return }
+            let observation = scrollView.observe(\.contentOffset, options: [.new]) { [weak self] scrollView, _ in
                 self?.report(scrollView)
             }
+            entries.append(Entry(scrollView: scrollView, observation: observation))
         }
     }
 
     func reset() {
-        observations.values.forEach { $0.invalidate() }
-        observations.removeAll()
+        entries.forEach { $0.observation.invalidate() }
+        entries.removeAll()
     }
 
     private func report(_ scrollView: UIScrollView) {
@@ -87,6 +94,67 @@ final class ScrollObserver {
         guard points > 0 else { return }
         let scale = scrollView.window?.screen.scale ?? UIScreen.main.scale
         onOffset?(Int((points * scale).rounded()))
+    }
+}
+
+/// Hybrid apps (React Native): a passive tap recognizer on the window collects the accessibility
+/// labels / identifiers of the views under the finger (Android bridge: global touch interceptor).
+/// It never cancels or delays the app's own touches.
+final class TouchIdentifierObserver: NSObject, UIGestureRecognizerDelegate {
+    var onIdentifiers: (([String]) -> Void)?
+    private let windows = NSHashTable<UIWindow>.weakObjects()
+
+    func attach(to window: UIWindow) {
+        guard !windows.contains(window) else { return }
+        let tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
+        tap.cancelsTouchesInView = false
+        tap.delaysTouchesBegan = false
+        tap.delaysTouchesEnded = false
+        tap.delegate = self
+        window.addGestureRecognizer(tap)
+        windows.add(window)
+        SDKLog.debug("Touch identifier observer attached")
+    }
+
+    func detach() {
+        for window in windows.allObjects {
+            window.gestureRecognizers?
+                .filter { ($0.delegate as AnyObject?) === self }
+                .forEach { window.removeGestureRecognizer($0) }
+        }
+        windows.removeAllObjects()
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+        true
+    }
+
+    @objc private func tapped(_ recognizer: UITapGestureRecognizer) {
+        guard recognizer.state == .ended, let window = recognizer.view as? UIWindow else { return }
+        var identifiers: [String] = []
+        Self.collect(in: window, at: recognizer.location(in: window), from: window, into: &identifiers)
+        guard !identifiers.isEmpty else { return }
+        SDKLog.debug("Tap on: \(identifiers)")
+        onIdentifiers?(identifiers)
+    }
+
+    private static func collect(in view: UIView, at point: CGPoint, from window: UIWindow, into identifiers: inout [String]) {
+        #if canImport(WebKit)
+        if view is WKWebView { return }
+        #endif
+        guard !view.isHidden, view.alpha > 0.01 else { return }
+        let local = view.convert(point, from: window)
+        guard view.bounds.contains(local) else { return }
+        for value in [view.accessibilityIdentifier, view.accessibilityLabel] {
+            if let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty,
+               !identifiers.contains(value) {
+                identifiers.append(value)
+            }
+        }
+        for subview in view.subviews {
+            collect(in: subview, at: point, from: window, into: &identifiers)
+        }
     }
 }
 
@@ -110,6 +178,7 @@ final class UIKitIntegration: PlatformIntegration {
     private let engine: SurveyEngine
     private let controls = ControlDetector()
     private let scroll = ScrollObserver()
+    private let touches = TouchIdentifierObserver()
     private weak var currentController: UIViewController?
     private var lastTabTitles: [ObjectIdentifier: String] = [:]
     private var observers: [NSObjectProtocol] = []
@@ -135,8 +204,13 @@ final class UIKitIntegration: PlatformIntegration {
             self?.coordinator?.appWillEnterForeground()
         })
 
-        // React Native / Flutter draw their own UI: only lifecycle events are observed.
-        guard !hybridMode else { return }
+        // React Native / Flutter draw their own UI: no swizzle and no control scanning. Taps are
+        // matched by accessibility label and the window's scroll views are observed.
+        guard !hybridMode else {
+            touches.onIdentifiers = { [weak coordinator] ids in coordinator?.touchIdentifiers(ids) }
+            DispatchQueue.main.async { [weak self] in self?.attachHybrid() }
+            return
+        }
 
         if automaticScreenTracking {
             ScreenTracker.installIfNeeded()
@@ -154,14 +228,23 @@ final class UIKitIntegration: PlatformIntegration {
     }
 
     func configurationApplied() {
-        guard !isHybrid else { return }
+        guard !isHybrid else {
+            attachHybrid()
+            return
+        }
         if let controller = currentController ?? UIKitSurveyPresenter.topViewController() {
             scan(controller)
         }
     }
 
     func screenTrackedManually() {
-        guard !isHybrid else { return }
+        guard !isHybrid else {
+            // The new JS screen mounts its views a little later.
+            for delay in [0.3, 1.0] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.attachHybrid() }
+            }
+            return
+        }
         // Give the new screen a moment to lay out, then look for buttons / scroll views.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             guard let self = self, let top = UIKitSurveyPresenter.topViewController(),
@@ -175,6 +258,22 @@ final class UIKitIntegration: PlatformIntegration {
         observers.removeAll()
         ScreenTracker.onScreenAppear = nil
         scroll.reset()
+        touches.detach()
+    }
+
+    // MARK: Hybrid
+
+    private func attachHybrid() {
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .filter { $0.rootViewController != nil && $0.windowLevel == .normal }
+        for window in windows {
+            touches.attach(to: window)
+            if engine.hasScrollSurveys {
+                scroll.observe(in: window)
+            }
+        }
     }
 
     // MARK: Screens

@@ -51,6 +51,9 @@ final class TriggerCoordinator {
     private var lastScrollFire: Date?
     private var lastScrollEvaluation: Date?
     private var throttledScrollOffset: Int?
+    /// "Scroll reached a threshold but nothing matched" is logged once per screen visit.
+    private var scrollNoMatchLogged = false
+    private var scrollEventLogged = false
     private var isTrailingScrollScheduled = false
     private var lastSurveyClosed: Date?
 
@@ -120,6 +123,8 @@ final class TriggerCoordinator {
         previousScreen = name
         core.session.trackScreenView()
         scrollFiredOnScreen.removeAll()
+        scrollNoMatchLogged = false
+        scrollEventLogged = false
         delayedScreenSurveys.forEach { $0.cancel() }
         delayedScreenSurveys.removeAll()
         SDKLog.debug("Screen transition: \(oldScreen ?? "-") -> \(name)")
@@ -206,11 +211,31 @@ final class TriggerCoordinator {
         show(survey)
     }
 
+    // MARK: - Touch identifiers (React Native)
+
+    /// Accessibility labels / identifiers under a tap (React Native has no UIKit buttons).
+    /// A configured tab name becomes a tab event, a configured button id a button event.
+    /// Other labels are ignored, so tapping e.g. a product card does not change the screen context.
+    func touchIdentifiers(_ identifiers: [String]) {
+        guard engine.isConfigLoaded else { return }
+        let normalized = identifiers.map(Self.normalize).filter { !$0.isEmpty }
+        if let tab = normalized.first(where: { engine.isConfiguredTab($0) }) {
+            trackTab(tab)
+        }
+        if let buttonId = normalized.lazy.compactMap({ self.engine.buttonId(matching: $0) }).first {
+            triggerButton(buttonId)
+        }
+    }
+
     // MARK: - Scroll
 
     /// Scroll position of the current screen in pixels (0 = top). A scroll survey fires at most
     /// once per screen visit.
     func scrollChanged(offsetPixels: Int) {
+        if !scrollEventLogged {
+            scrollEventLogged = true
+            SDKLog.debug("Scroll events received on '\(core.session.currentScreen ?? "-")' (first: \(offsetPixels)px)")
+        }
         guard engine.isConfigLoaded, !isShowingSurvey,
               let minimum = engine.minimumScrollThreshold, offsetPixels >= minimum else { return }
         if let last = lastScrollFire, now().timeIntervalSince(last) < timing.scrollCooldown { return }
@@ -238,11 +263,19 @@ final class TriggerCoordinator {
         lastScrollEvaluation = now()
         throttledScrollOffset = nil
 
-        guard let survey = engine.scrollSurvey(offsetPixels: offsetPixels),
-              !scrollFiredOnScreen.contains(survey.surveyId) else { return }
+        guard let survey = engine.scrollSurvey(offsetPixels: offsetPixels) else {
+            if !scrollNoMatchLogged {
+                scrollNoMatchLogged = true
+                SDKLog.debug("Scroll \(offsetPixels)px on '\(core.session.currentScreen ?? "-")': no survey can be shown")
+            }
+            return
+        }
+        guard !scrollFiredOnScreen.contains(survey.surveyId) else { return }
+        // Only a survey that was actually shown (or queued) uses up this screen visit;
+        // if presenting failed, the next scroll event tries again.
+        guard show(survey) else { return }
         scrollFiredOnScreen.insert(survey.surveyId)
         lastScrollFire = now()
-        show(survey)
     }
 
     // MARK: - App lifecycle
@@ -327,14 +360,16 @@ final class TriggerCoordinator {
     }
 
     /// One survey at a time. Others wait in a priority-ordered queue without duplicates.
-    func show(_ survey: SurveyConfig) {
+    /// Returns true when the survey was shown or queued.
+    @discardableResult
+    func show(_ survey: SurveyConfig) -> Bool {
         if isShowingSurvey {
             guard survey.surveyId != currentSurveyId,
-                  !queue.contains(where: { $0.surveyId == survey.surveyId }) else { return }
+                  !queue.contains(where: { $0.surveyId == survey.surveyId }) else { return false }
             let index = queue.firstIndex { $0.priority < survey.priority } ?? queue.endIndex
             queue.insert(survey, at: index)
             SDKLog.debug("Survey \(survey.surveyId) queued (\(queue.count) waiting)")
-            return
+            return true
         }
 
         let url = engine.surveyURL(for: survey)
@@ -350,11 +385,12 @@ final class TriggerCoordinator {
             isShowingSurvey = false
             currentSurveyId = nil
             processQueue()
-            return
+            return false
         }
         engine.recordShown(survey)
         SDKLog.info("Survey shown: \(surveyId)")
         onSurveyShown?(surveyId)
+        return true
     }
 
     private func surveyClosed(_ surveyId: String) {
@@ -382,6 +418,22 @@ final class TriggerCoordinator {
 
     func clearQueue() {
         queue.removeAll()
+    }
+
+    /// Android `getQueueStatus` format.
+    var queueStatus: String {
+        queue.isEmpty
+            ? "Queue: Empty"
+            : "Queue: \(queue.count) surveys - " + queue.map { "(P:\($0.priority))" }.joined(separator: ", ")
+    }
+
+    /// Android `resetTriggers`: display counters, screen state and pending delayed surveys.
+    func resetTriggers() {
+        engine.eligibility.resetSessionCounters()
+        resetScreenState()
+        lastScrollFire = nil
+        lastTabEvent = nil
+        lastButtonEvent = nil
     }
 
     /// Forgets screen state (e.g. after `resetSessionData`).
