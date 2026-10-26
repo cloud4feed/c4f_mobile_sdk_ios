@@ -1,0 +1,48 @@
+# iPhone counterpart of the Android test app (SDKTest/SurveySDKTestApp).
+# Generate the Xcode project on a Mac:
+#   brew install xcodegen
+#   cd Example/SurveySDKTestApp-iOS && xcodegen
+name: SurveySDKTestApp
+options:
+  bundleIdPrefix: com.cloud4feed
+  deploymentTarget:
+    iOS: "15.0"
+packages:
+  Cloud4FeedSDK:
+    path: ../..
+targets:
+  SurveySDKTestApp:
+    type: application
+    platform: iOS
+    sources:
+      - SurveySDKTestApp
+    dependencies:
+      - package: Cloud4FeedSDK
+    info:
+      path: SurveySDKTestApp/Info.plist
+      properties:
+        CFBundleDisplayName: Survey SDK Test
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+          UISceneConfigurations:
+            UIWindowSceneSessionRoleApplication:
+              - UISceneConfigurationName: Default Configuration
+                UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).SceneDelegate
+        # Deep links for the URL value source: surveytest://open?campaign=summer
+        CFBundleURLTypes:
+          - CFBundleURLName: com.cloud4feed.SurveySDKTestApp
+            CFBundleURLSchemes:
+              - surveytest
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cloud4feed.SurveySDKTestApp
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        # Simulator builds do not need signing.
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGNING_REQUIRED: "NO"

@@ -19,7 +19,8 @@ let package = Package(
     targets: [
         .target(
             name: "Cloud4FeedSDK",
-            path: "Sources/Cloud4FeedSDK"
+            path: "Sources/Cloud4FeedSDK",
+            resources: [.copy("Resources/PrivacyInfo.xcprivacy")]
         ),
         .testTarget(
             name: "Cloud4FeedSDKTests",

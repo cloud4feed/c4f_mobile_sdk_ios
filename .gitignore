@@ -1,6 +1,9 @@
 .DS_Store
 /.build
+/.build-ios
 /.swiftpm
+Example/SurveySDKTestApp-iOS/SurveySDKTestApp.xcodeproj/
+Example/SurveySDKTestApp-iOS/SurveySDKTestApp/Info.plist
 /Packages
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/

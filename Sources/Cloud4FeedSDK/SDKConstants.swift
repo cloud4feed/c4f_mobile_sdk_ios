@@ -31,6 +31,8 @@ public enum SDKConstants {
     static let sessionSuiteName = "com.cloud4feed.mobilesdk.session"
     /// UserDefaults suite for "trigger once" memory (Android: `survey_sdk_trigger_once`).
     static let triggerOnceSuiteName = "com.cloud4feed.mobilesdk.triggeronce"
+    /// UserDefaults suite for pending app-exit surveys (Android: survey_sdk_exit).
+    static let exitSuiteName = "com.cloud4feed.mobilesdk.exit"
 
     // ===== LOGGING =====
     static let logSubsystem = "com.cloud4feed.mobilesdk"

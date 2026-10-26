@@ -123,6 +123,11 @@ final class SurveyEngine {
         return Self.highestPriority(matching)
     }
 
+    /// Smallest threshold of the scroll surveys; offsets below it cannot match anything.
+    var minimumScrollThreshold: Int? {
+        config.surveys.filter(\.enableScrollTrigger).map(\.scrollThreshold).min()
+    }
+
     /// Whether the scroll observer is needed at all (Android only observes thresholds > 0).
     var hasScrollSurveys: Bool {
         config.surveys.contains { $0.enableScrollTrigger && $0.scrollThreshold > 0 }
@@ -132,6 +137,30 @@ final class SurveyEngine {
 
     func appLaunchSurveys() -> [SurveyConfig] {
         config.surveys.filter { $0.enableAppLaunchTrigger && eligibility.canShow($0) }
+    }
+
+    // MARK: - App exit ("welcome back")
+
+    /// Exit surveys without trigger screens are app-exit surveys: remembered when the app goes to
+    /// the background and shown when the user comes back (Android `handleAppExit`).
+    var appExitSurveyIds: [String] {
+        config.surveys.filter { $0.enableExitTrigger && $0.triggerScreens.isEmpty }.map(\.surveyId)
+    }
+
+    func welcomeBackSurveys(ids: [String]) -> [SurveyConfig] {
+        ids.compactMap { id in config.surveys.first { $0.surveyId == id } }
+            .filter { $0.enableExitTrigger && $0.triggerScreens.isEmpty && eligibility.canShow($0) }
+    }
+
+    // MARK: - Manual display
+
+    func survey(withId id: String) -> SurveyConfig? {
+        config.surveys.first { $0.surveyId == id }
+    }
+
+    /// Highest-priority survey that may be shown now, whatever its triggers (Android `showSurvey`).
+    func anyEligibleSurvey() -> SurveyConfig? {
+        Self.highestPriority(config.surveys.filter { eligibility.canShow($0) })
     }
 
     // MARK: - Display

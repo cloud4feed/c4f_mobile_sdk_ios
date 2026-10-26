@@ -15,6 +15,8 @@ final class SDKCore {
     private(set) var parameters: [String: String]
 
     let dataStore: KeyValueStore
+    /// Pending app-exit surveys (shown when the user comes back).
+    let exitStore: KeyValueStore
     let storage: StorageReader
     let session: SessionTracker
     let urlParameters: URLParameterStore
@@ -30,6 +32,7 @@ final class SDKCore {
          dataStore: KeyValueStore = UserDefaultsStore(suiteName: SDKConstants.dataSuiteName),
          sessionStore: KeyValueStore = UserDefaultsStore(suiteName: SDKConstants.sessionSuiteName),
          triggerOnceStore: KeyValueStore = UserDefaultsStore(suiteName: SDKConstants.triggerOnceSuiteName),
+         exitStore: KeyValueStore = UserDefaultsStore(suiteName: SDKConstants.exitSuiteName),
          appStores: [KeyValueStore] = [UserDefaultsStore(suiteName: nil)],
          device: DeviceInfoProviding = FoundationDeviceInfo(),
          installDate: @escaping () -> Date? = ValueResolver.appContainerCreationDate,
@@ -56,6 +59,7 @@ final class SDKCore {
         self.apiKey = apiKey
         self.parameters = parameters
         self.dataStore = dataStore
+        self.exitStore = exitStore
         self.storage = storage
         self.session = session
         self.urlParameters = urlParameters
@@ -90,22 +94,29 @@ final class SDKCore {
     }
 
     /// Cache first (same parameters, not expired), otherwise network. A network config is cached.
-    /// On failure the previous configuration stays applied.
-    @discardableResult
-    func loadConfiguration(forceRefresh: Bool = false) async -> ConfigSource {
+    /// Does not apply anything, so it can run off the main thread; pass a snapshot of the parameters.
+    func resolveConfiguration(parameters: [String: String], forceRefresh: Bool = false) async -> (Config?, ConfigSource) {
         if !forceRefresh, let cached = cache.load(parameters: parameters) {
-            engine.apply(cached)
-            return .cache
+            return (cached, .cache)
         }
         do {
             let config = try await service.fetch(parameters: parameters)
             cache.save(config, parameters: parameters)
-            engine.apply(config)
-            return .network
+            return (config, .network)
         } catch {
             SDKLog.error("Configuration could not be loaded: \(error)")
-            return .none
+            return (nil, .none)
         }
+    }
+
+    /// Resolves and applies. On failure the previous configuration stays applied.
+    @discardableResult
+    func loadConfiguration(forceRefresh: Bool = false) async -> ConfigSource {
+        let (config, source) = await resolveConfiguration(parameters: parameters, forceRefresh: forceRefresh)
+        if let config = config {
+            engine.apply(config)
+        }
+        return source
     }
 
     // MARK: Data written by the app
