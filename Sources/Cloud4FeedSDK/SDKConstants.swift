@@ -3,7 +3,7 @@ import Foundation
 /// Central constants. Update `sdkVersion` when releasing a new version.
 public enum SDKConstants {
     // ===== SDK VERSION =====
-    public static let sdkVersion = "1.0.0"
+    public static let sdkVersion = "1.0.1"
     public static let sdkName = "MobileSDK-iOS"
 
     // ===== API CONFIGURATION =====

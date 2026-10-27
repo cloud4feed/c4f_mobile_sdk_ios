@@ -27,6 +27,7 @@ final class MobileSDKTests: XCTestCase {
 
     override func tearDown() {
         MobileSDK.setShared(nil)
+        MobileSDK.pendingURL = nil
         env.cleanUp()
     }
 
@@ -135,6 +136,34 @@ final class MobileSDKTests: XCTestCase {
         XCTAssertEqual(sdk.core.resolver.value(source: .session, key: "promo_code", name: "x"), "WELCOME10")
         sdk.resetSessionData()
         XCTAssertNil(sdk.core.resolver.value(source: .session, key: "promo_code", name: "x"))
+    }
+
+    /// Cold start from a link: the link arrives before `initialize` and must not be lost.
+    func testDeepLinkBeforeInitializeIsAppliedOnStart() {
+        MobileSDK.setShared(nil)
+        MobileSDK.handle(url: URL(string: "surveytest://open?campaign=summer")!)
+        XCTAssertEqual(MobileSDK.pendingURL?.absoluteString, "surveytest://open?campaign=summer")
+
+        let sdk = makeSDK(transport: MockTransport([]))   // installs `shared` like initialize
+        XCTAssertNil(MobileSDK.pendingURL)
+        XCTAssertEqual(sdk.core.resolver.value(source: .url, key: "campaign", name: "x"), "summer")
+    }
+
+    /// With the SDK running, the static entry point goes straight to the instance.
+    func testStaticDeepLinkAfterInitialize() {
+        let sdk = makeSDK(transport: MockTransport([]))
+        MobileSDK.handle(url: URL(string: "surveytest://open?campaign=winter")!)
+        XCTAssertNil(MobileSDK.pendingURL)
+        XCTAssertEqual(sdk.core.resolver.value(source: .url, key: "campaign", name: "x"), "winter")
+    }
+
+    /// Only the latest early link is kept.
+    func testLatestEarlyDeepLinkWins() {
+        MobileSDK.setShared(nil)
+        MobileSDK.handle(url: URL(string: "surveytest://open?campaign=first")!)
+        MobileSDK.handle(url: URL(string: "surveytest://open?campaign=second")!)
+        let sdk = makeSDK(transport: MockTransport([]))
+        XCTAssertEqual(sdk.core.resolver.value(source: .url, key: "campaign", name: "x"), "second")
     }
 
     func testShutdownStopsIntegration() {

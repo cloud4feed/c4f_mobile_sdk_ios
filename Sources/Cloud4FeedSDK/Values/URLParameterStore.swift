@@ -1,7 +1,7 @@
 import Foundation
 
 /// URL source: query parameters of the last deep link the app handed to the SDK
-/// (`MobileSDK.shared.handle(url:)`). Android reads them from the opening Activity's Intent.
+/// (`MobileSDK.handle(url:)`). Android reads them from the opening Activity's Intent.
 final class URLParameterStore {
     private(set) var parameters: [String: String] = [:]
 

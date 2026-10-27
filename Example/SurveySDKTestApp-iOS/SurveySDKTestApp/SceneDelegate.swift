@@ -23,14 +23,14 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         self.window = window
 
         if let url = connectionOptions.urlContexts.first?.url {
-            MobileSDK.shared?.handle(url: url)
+            MobileSDK.handle(url: url)
         }
     }
 
     // Deep links: surveytest://open?campaign=summer -> URL value source "campaign".
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         if let url = URLContexts.first?.url {
-            MobileSDK.shared?.handle(url: url)
+            MobileSDK.handle(url: url)
         }
     }
 

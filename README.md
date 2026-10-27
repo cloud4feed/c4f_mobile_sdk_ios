@@ -3,7 +3,8 @@
 Swift version of the Cloud4Feed survey SDK. It reads the same configuration as the Android SDK
 (`c4f_mobile_sdk`) from `anonym.cloud4feed.com` and opens the survey from `cx.cloud4feed.com`.
 
-> Version **1.0.0**. Tested on the iOS 27 simulator (Xcode 27.1) against the live Cloud4Feed
+> Version **1.0.1** (1.0.1: a deep link that arrives before `initialize` is kept — use
+> `MobileSDK.handle(url:)`). Tested on the iOS 27 simulator (Xcode 27.1) against the live Cloud4Feed
 > backend: all six trigger types, the three display styles, custom parameters, exclusion rules,
 > display limits and the loading-error screen. React Native and Flutter bridges ship this SDK
 > bundled (`cloud4feed-mobilesdk-react-native` / `cloud4feed_mobilesdk_flutter` 1.3.0+).
@@ -16,12 +17,12 @@ Swift version of the Cloud4Feed survey SDK. It reads the same configuration as t
 ## Installation (Swift Package Manager)
 
 Xcode → **File → Add Package Dependencies…** → `https://github.com/cloud4feed/c4f_mobile_sdk_ios`
-→ Dependency Rule **Up to Next Major Version** from `1.0.0` → add the **Cloud4FeedSDK** library.
+→ Dependency Rule **Up to Next Major Version** from `1.0.1` → add the **Cloud4FeedSDK** library.
 
 Or in `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/cloud4feed/c4f_mobile_sdk_ios.git", from: "1.0.0")
+.package(url: "https://github.com/cloud4feed/c4f_mobile_sdk_ios.git", from: "1.0.1")
 ```
 
 ## Quick start
@@ -65,7 +66,24 @@ sdk?.triggerScroll(offsetPixels: 600)
 sdk?.showSurvey(id: "180")
 sdk?.setUserProperty("gold", forKey: "user_tier")      // STORAGE
 sdk?.setSessionData("WELCOME10", forKey: "promo_code")  // SESSION
-sdk?.handle(url: deepLinkURL)                            // URL
+```
+
+Deep links (URL value source) — pass the link that opened the app. `MobileSDK.handle(url:)` works
+at any time: a link that arrives before `initialize` (app opened from a link while it was not
+running) is kept and applied when the SDK starts.
+
+```swift
+// SceneDelegate
+func scene(_ scene: UIScene, willConnectTo session: UISceneSession,
+           options connectionOptions: UIScene.ConnectionOptions) {
+    if let url = connectionOptions.urlContexts.first?.url { MobileSDK.handle(url: url) }
+}
+func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+    if let url = URLContexts.first?.url { MobileSDK.handle(url: url) }
+}
+
+// SwiftUI
+ContentView().onOpenURL { MobileSDK.handle(url: $0) }
 ```
 
 ## Layout

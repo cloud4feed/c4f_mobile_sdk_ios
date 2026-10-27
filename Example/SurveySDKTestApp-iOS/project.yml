@@ -11,7 +11,7 @@ packages:
   # Same as a customer app: the published package from GitHub (Swift Package Manager).
   Cloud4FeedSDK:
     url: https://github.com/cloud4feed/c4f_mobile_sdk_ios.git
-    from: 1.0.0
+    from: 1.0.1
 targets:
   SurveySDKTestApp:
     type: application

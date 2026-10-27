@@ -65,10 +65,38 @@ public final class MobileSDK {
                             dispatchToMain: performOnMain,
                             integrationFactory: makeDefaultIntegration)
         sdk.core.updateParameters(sdk.resolve(parameters: parameters, lookupKeys: lookupKeys))
-        shared = sdk
+        activate(sdk)
         SDKLog.info("SDK \(SDKConstants.sdkVersion) initialized with \(sdk.core.parameters.count) parameters")
         sdk.reloadConfiguration()
         return sdk
+    }
+
+    /// Deep link that arrived before `initialize` (an app opened from a link while it was not
+    /// running gets the link before its startup code runs). Applied by the next `initialize`.
+    static var pendingURL: URL?
+
+    /// Deep links: query parameters become the URL value source. Safe to call at any time:
+    /// before `initialize` the link is kept and applied when the SDK starts. Prefer this over
+    /// `MobileSDK.shared?.handle(url:)`, which drops a link that arrives before `initialize`.
+    public static func handle(url: URL) {
+        performOnMain {
+            if let sdk = shared {
+                sdk.handle(url: url)
+            } else {
+                pendingURL = url
+                SDKLog.debug("Deep link kept until initialize")
+            }
+        }
+    }
+
+    /// Makes `sdk` the shared instance and applies a deep link that arrived before it existed.
+    private static func activate(_ sdk: MobileSDK) {
+        shared = sdk
+        if let url = pendingURL {
+            pendingURL = nil
+            sdk.core.urlParameters.update(from: url)
+            SDKLog.debug("Deep link received before initialize applied")
+        }
     }
 
     // MARK: - State
@@ -185,7 +213,8 @@ public final class MobileSDK {
         dispatchToMain { [self] in coordinator.showSurvey(id: id) }
     }
 
-    /// Deep links: query parameters become the URL value source.
+    /// Deep links: query parameters become the URL value source. See also the static
+    /// `MobileSDK.handle(url:)`, which also works before `initialize`.
     public func handle(url: URL) {
         dispatchToMain { [self] in core.urlParameters.update(from: url) }
     }
@@ -357,9 +386,13 @@ public final class MobileSDK {
         core.lookUpParameters(lookupKeys).merging(parameters) { _, direct in direct }
     }
 
-    /// Test hook: install an instance as `shared`.
+    /// Test hook: install an instance as `shared` the way `initialize` does (nil clears it).
     static func setShared(_ sdk: MobileSDK?) {
-        shared = sdk
+        if let sdk = sdk {
+            activate(sdk)
+        } else {
+            shared = nil
+        }
     }
 }
 
